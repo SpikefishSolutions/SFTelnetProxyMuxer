@@ -2,7 +2,6 @@ import socket
 import asyncio
 import telnetlib3
 import pdb
-
 import logging
 
 
@@ -103,7 +102,7 @@ class SFTelnetProxyMuxer:
 
     async def broadcast_to_clients(self, data):
         if not self.clients:
-            logging.debug(f"No clients connected, ignoring data.")
+            logging.debug(f"Warning: No clients connected, ignoring data.")
             return 
             
         for writer in set(self.clients):
@@ -159,17 +158,17 @@ class SFTelnetProxyMuxer:
                     #logging.debug("Sending data to clients data: {data}")
                     await self.broadcast_to_clients(data)
             except ConnectionRefusedError as e:
-                error_msg = f"Warning: Connection to remote server {self.remote_ip}:{self.remote_port} refused."
+                error_msg = f"Warning: Connection to remote server {self.remote_info} refused."
                 logging.debug(error_msg)
                 await self.broadcast_to_clients(f"\r{error_msg}\n\r")
 
             except TimeoutError as e:
-                error_msg = f"Warning: Connection to remote server {self.remote_ip}:{self.remote_port} timedout."
+                error_msg = f"Warning: Connection to remote server {self.remote_info} timedout."
                 logging.debug(error_msg)
                 await self.broadcast_to_clients(f"\r{error_msg}\n\r")
 
             except Exception as e:
-                error_msg = f"Warning: Connection to remote server {self.remote_ip}:{self.remote_port} unknown error: {e}."
+                error_msg = f"Warning: Connection to remote server {self.remote_info} unknown error: {e}."
                 logging.debug(error_msg)
                 await self.broadcast_to_clients(f"\r{error_msg}\n\r")
 
