@@ -138,8 +138,10 @@ class SFTelnetProxyMuxer:
                         logging.warning(f"No data from server {self.remote_info}, send heartbeat to test socket.")
                         try:
                             logging.warning(f"Heatbeat: Are you there {self.remote_info}?")
-                            #pdb.set_trace()
-                            #self.remote_writer.write("")
+                            # NOP and AYT cause QEMU to spam everyone's console with junk. 
+                            # This causes everyone to close the session and eof tcp which makes me sad.
+                            # Will need to research more... or did i call this wrong and just fix it?
+                            #self.remote_writer.send_iac(self.IAC + self.NOP)
                             await self.remote_writer.drain()
                             continue
                         except Exception as e:
