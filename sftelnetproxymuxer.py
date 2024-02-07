@@ -12,8 +12,15 @@ class SFTelnetProxyMuxer:
         # reader / writer are input and output channels to use instead of telneting to remote
         if (remote_server or remote_port) and (reader or writer):
             raise ValueError("Error: argument remote_server or remote_port can't be used along with reader or writer. Only use remote_server nad remote_port or reader / writer")
-        self.remote_server = remote_server
-        self.remote_port = remote_port
+        if remote_server and remote_port:
+            self.remote_server = remote_server
+            self.remote_port = remote_port
+        elif reader and writer:
+            self.reader = reader
+            self.writer = writer
+        else:
+            raise ValueError("You must define remote_server and remote_port or reader and writer. These input are where the proxy will get data from")
+      
         # make the remote_info look like the same format as client_info later from sock('peername')
         self.remote_info = f"('{self.remote_server}', {self.remote_port})"
         if listen_ip == None:
@@ -259,9 +266,9 @@ if __name__ == "__main__":
 
         try:
             #await asyncio.sleep(0)
-            server = SFTelnetProxyMuxer(remote_server="10.1.18.100", remote_port=5003, listen_ip="0.0.0.0", listen_port=5000)
+            server = SFTelnetProxyMuxer(remote_server="10.1.18.100", remote_port=5003, listen_ip="0.0.0.0", listen_port=5010)
             _wrapper_telnet_server = await server.start_proxy()
-            #await proxy.start_proxy()
+            await server.start_proxy()
         except OSError as e:
             log.debug(f"Can't start proxy: {e}")
 
