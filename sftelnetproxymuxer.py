@@ -7,8 +7,11 @@ log = logging.getLogger(__name__)
 
 class SFTelnetProxyMuxer:
     def __init__(self, remote_server=None, remote_port=None, listen_ip=None, listen_port=None, reader=None, writer=None, heartbeattimer=None):
-        if remote_server == None:
-            remote_server = '127.0.0.1'
+
+        # remote_server/remote_port are remote telnet server to connect to.
+        # reader / writer are input and output channels to use instead of telneting to remote
+        if (remote_server or remote_port) and (reader or writer):
+            raise ValueError("remote_server/remote_port can't be used iwth reader/writer")
         self.remote_server = remote_server
         self.remote_port = remote_port
         # make the remote_info look like the same format as client_info later from sock('peername')
@@ -34,8 +37,6 @@ class SFTelnetProxyMuxer:
         self.NOP = b"\xf1"
         # Telnet Are You There.
         self.AYT = b"\xf6"
-        if (remote_server or remote_port) and (reader or writer):
-            raise ValueError("remote_server/remote_port can't be used iwth reader/writer")
         if not remote_port:
             raise ValueError("remote_port is a required value")
         if not listen_port:
