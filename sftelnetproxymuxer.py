@@ -42,7 +42,7 @@ class SFTelnetProxyMuxer:
         self.heartbeattimer = heartbeattimer
         if not heartbeattimer:
             self.heartbeattimer = 30
-        self.isshutdown = False
+        self.closing = False
 
     async def handle_client(self, reader, writer):
         client_info = writer.get_extra_info('peername')
@@ -53,7 +53,7 @@ class SFTelnetProxyMuxer:
 
         try:
             await asyncio.sleep(1)
-            while True and not self.isshutdown:
+            while True and not self.closing:
                 try:
                     # Set a timeout for the read operation, without should() the socket closes after timeout.
                     data = await asyncio.shield(asyncio.wait_for(reader.read((4*1024*1024)), timeout=self.heartbeattimer))
@@ -127,7 +127,7 @@ class SFTelnetProxyMuxer:
 
     async def handle_remote_server(self):
         log.debug("Start handler for remote server")
-        while True and not self.isshutdown:
+        while True and not self.closing:
             log.debug("main run loop")
             try:
                 if self.remote_ip and self.remote_port:
@@ -145,7 +145,7 @@ class SFTelnetProxyMuxer:
                 else:
                     raise ValueError("Server state incorrect. self.remote_reader or self.remote_writer close (eof).")
                 
-                while True and not self.isshutdown:
+                while True and not self.closing:
                     
                     try:
                         #data = await self.remote_reader.read((4*1024*1024))
@@ -212,7 +212,7 @@ class SFTelnetProxyMuxer:
 
     async def shutdown(self):
         log.debug(f"Set shutdown")
-        self.isshutdown = True
+        self.closing = True
         if self.server:
             try:
                 log.debug(f"Shuting down tcp listen port {self.remote_port}")
