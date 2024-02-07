@@ -66,7 +66,7 @@ class SFTelnetProxyMuxer:
             while True and not self.closing:
                 try:
                     # Set a timeout for the read operation, without should() the socket closes after timeout.
-                    data = await asyncio.shield(asyncio.wait_for(reader.read((4*1024*1024)), timeout=self.heartbeattimer))
+                    data = await asyncio.shield(asyncio.wait_for(reader.read(1024), timeout=self.heartbeattimer))
                     if not data:
                         log.debug(f"No data from socket read, start over read loop.")
                         continue 
@@ -141,7 +141,7 @@ class SFTelnetProxyMuxer:
             log.debug("main run loop")
             try:
                 if self.remote_server and self.remote_port:
-                    log.debug(f"Looks like we're running a server {self.listen_ip}.")
+                    log.debug(f"Looks like we're running a server {self.listen_ip} on {self.listen_port}.")
                     self.remote_reader, self.remote_writer = await telnetlib3.open_connection(
                         host=self.remote_server, port=self.remote_port
                     )
@@ -158,8 +158,7 @@ class SFTelnetProxyMuxer:
                 while True and not self.closing:
                     
                     try:
-                        #data = await self.remote_reader.read((4*1024*1024))
-                        data = await asyncio.shield(asyncio.wait_for(self.remote_reader.read((4*1024*1024)), timeout=self.heartbeattimer))
+                        data = await asyncio.shield(asyncio.wait_for(self.remote_reader.read(1024), timeout=self.heartbeattimer))
                         if not data:
                             log.debug(f"No data from remote telnet server {self.remote_info}.")
                             continue
@@ -215,9 +214,9 @@ class SFTelnetProxyMuxer:
             host=self.listen_ip, port=self.listen_port,
             shell=self.handle_client
         )
-        #async with self.server:
-        #    log.debug("Startup of telnet proxy complete.")
-        #    await self.server.wait_closed()
+        async with self.server:
+            log.debug("Startup of telnet proxy complete.")
+            await self.server.wait_closed()
         return self
 
     async def shutdown(self):
@@ -266,8 +265,7 @@ if __name__ == "__main__":
 
         try:
             #await asyncio.sleep(0)
-            server = SFTelnetProxyMuxer(remote_server="10.1.18.100", remote_port=5003, listen_ip="0.0.0.0", listen_port=5010)
-            _wrapper_telnet_server = await server.start_proxy()
+            server = SFTelnetProxyMuxer(remote_server="10.1.14.22", remote_port=7058, listen_ip="0.0.0.0", listen_port=5010)
             await server.start_proxy()
         except OSError as e:
             log.debug(f"Can't start proxy: {e}")
