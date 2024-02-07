@@ -6,13 +6,13 @@ import pdb
 log = logging.getLogger(__name__)
 
 class SFTelnetProxyMuxer:
-    def __init__(self, remote_ip=None, remote_port=None, listen_ip=None, listen_port=None, reader=None, writer=None, heartbeattimer=None):
-        if remote_ip == None:
-            remote_ip = '127.0.0.1'
-        self.remote_ip = remote_ip
+    def __init__(self, remote_server=None, remote_port=None, listen_ip=None, listen_port=None, reader=None, writer=None, heartbeattimer=None):
+        if remote_server == None:
+            remote_server = '127.0.0.1'
+        self.remote_server = remote_server
         self.remote_port = remote_port
         # make the remote_info look like the same format as client_info later from sock('peername')
-        self.remote_info = f"('{self.remote_ip}', {self.remote_port})"
+        self.remote_info = f"('{self.remote_server}', {self.remote_port})"
         if listen_ip == None:
             listen_ip = '0.0.0.0'
         self.listen_ip = listen_ip
@@ -34,6 +34,8 @@ class SFTelnetProxyMuxer:
         self.NOP = b"\xf1"
         # Telnet Are You There.
         self.AYT = b"\xf6"
+        if (remote_server or remote_port) and (reader or writer):
+            raise ValueError("remote_server/remote_port can't be used iwth reader/writer")
         if not remote_port:
             raise ValueError("remote_port is a required value")
         if not listen_port:
@@ -130,14 +132,14 @@ class SFTelnetProxyMuxer:
         while True and not self.closing:
             log.debug("main run loop")
             try:
-                if self.remote_ip and self.remote_port:
+                if self.remote_server and self.remote_port:
                     log.debug(f"Looks like we're running a server {self.listen_ip}.")
                     self.remote_reader, self.remote_writer = await telnetlib3.open_connection(
-                        host=self.remote_ip, port=self.remote_port
+                        host=self.remote_server, port=self.remote_port
                     )
                     sock = self.remote_writer.get_extra_info('socket') 
                     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                elif self.remote_reader and self.remote_writer and not self.remote_ip and not self.remote_port:
+                elif self.remote_reader and self.remote_writer and not self.remote_server and not self.remote_port:
                     log.debug(f"Looks like we're running with reader and writer.")
                     if self.remote_reader.at_eof() or self.remote_writer.at_eof():
                         log.debug(f"reader/writer EOFed.")
@@ -256,7 +258,7 @@ if __name__ == "__main__":
 
         try:
             #await asyncio.sleep(0)
-            server = SFTelnetProxyMuxer(remote_ip="10.1.18.100", remote_port=5003, listen_ip="0.0.0.0", listen_port=5000)
+            server = SFTelnetProxyMuxer(remote_server="10.1.18.100", remote_port=5003, listen_ip="0.0.0.0", listen_port=5000)
             _wrapper_telnet_server = await server.start_proxy()
             #await proxy.start_proxy()
         except OSError as e:
