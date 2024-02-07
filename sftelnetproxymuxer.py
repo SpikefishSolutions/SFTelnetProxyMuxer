@@ -11,7 +11,7 @@ class SFTelnetProxyMuxer:
         # remote_server/remote_port are remote telnet server to connect to.
         # reader / writer are input and output channels to use instead of telneting to remote
         if (remote_server or remote_port) and (reader or writer):
-            raise ValueError("remote_server/remote_port can't be used iwth reader/writer")
+            raise ValueError("Error: argument remote_server or remote_port can't be used along with reader or writer. Only use remote_server nad remote_port or reader / writer")
         self.remote_server = remote_server
         self.remote_port = remote_port
         # make the remote_info look like the same format as client_info later from sock('peername')
