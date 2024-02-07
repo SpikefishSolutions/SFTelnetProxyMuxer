@@ -8,6 +8,7 @@ log = logging.getLogger(__name__)
 class SFTelnetProxyMuxer:
     def __init__(self, remote_server=None, remote_port=None, listen_ip=None, listen_port=None, reader=None, writer=None, heartbeattimer=None):
 
+        self.server = None
         # remote_server/remote_port are remote telnet server to connect to.
         # reader / writer are input and output channels to use instead of telneting to remote
         if (remote_server or remote_port) and (reader or writer):
@@ -15,9 +16,11 @@ class SFTelnetProxyMuxer:
         if remote_server and remote_port:
             self.remote_server = remote_server
             self.remote_port = remote_port
+            self.server = telnet
         elif reader and writer:
             self.reader = reader
             self.writer = writer
+            self.server = 
         else:
             raise ValueError("You must define remote_server and remote_port or reader and writer. These input are where the proxy will get data from")
       
@@ -34,7 +37,6 @@ class SFTelnetProxyMuxer:
         if writer:
             self.writer = writer
         self.clients = set()
-        self.server = None
         self.remote_reader = None
         self.remote_writer = None
         self.lock = asyncio.Lock()  # Lock for coordinating access to the remote server
