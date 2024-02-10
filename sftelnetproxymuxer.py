@@ -195,7 +195,7 @@ class SFTelnetProxyMuxer:
                             # This causes everyone to close the session and eof tcp which makes me sad.
                             # Will need to research more... or did i call this wrong and just fix it?
                             self.remote_writer.send_iac(self.IAC + self.NOP)
-                            await asyncio.wait(self.remote_writer.drain(), timeout=10)
+                            await asyncio.wait_for(self.remote_writer.drain(), timeout=10)
                             continue
                         except Exception as e:
                             log.debug(f"Heateat: Unknown error from {self.remote_info}, shutting down. Exeption {e}")
