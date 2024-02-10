@@ -80,7 +80,12 @@ class SFTelnetProxyMuxer:
                         log.debug(f"No data from socket read, start over read loop.")
                         continue 
 
+                    if data == self.NOP:
+                        log.debug(f"Heatbeat: {client_info} I am alive.")
+                        continue
+                        
                     async with self.lock:
+                        log.debug(f"We have data from {self.remote_info} data: :{data}:")
                         if self.remote_writer is not None:
                             log.debug(f"Sending data from from client {client_info} to server {self.remote_info}")
                             try: 
@@ -88,11 +93,11 @@ class SFTelnetProxyMuxer:
                                 await asyncio.wait_for(self.remote_writer.drain(), timeout=10)
                             except asyncio.TimeoutError:
                                 log.debug(f"Timeout failure waiting for write and/or drain. Closing server")
-                                self.shutdown()
+                                await self.shutdown()
                                 return
                             except Exception as e:
                                 log.debug(f"Unknown failure waiting for write and/or drain. Closing server: Error {e}")
-                                self.shutdown()
+                                await self.shutdown()
                                 return
                            
                 # this just doesn't work right. We should indicate we sent a heartbeat then check on the next loop if there was a only a NOP packet.
@@ -113,8 +118,6 @@ class SFTelnetProxyMuxer:
                         writer.close()
                         self.clients.discard(writer)
                         break 
-                    finally:
-                        log.debug(f"Heatbeat: {client_info} Yes I am.")
 
                 except Exception as e:
                     log.debug(f"Error in handling data from client {client_info}:")
@@ -179,6 +182,11 @@ class SFTelnetProxyMuxer:
                         if not data:
                             log.debug(f"No data from remote telnet server {self.remote_info}.")
                             continue
+
+                        if data == self.NOP:
+                            log.debug(f"Heatbeat: {self.remote_info} I am alive.")
+                            continue
+
                     except asyncio.TimeoutError:
                         log.debug(f"No data from server {self.remote_info}, send heartbeat to test socket.")
                         try:
@@ -186,15 +194,13 @@ class SFTelnetProxyMuxer:
                             # NOP and AYT cause QEMU to spam everyone's console with junk. 
                             # This causes everyone to close the session and eof tcp which makes me sad.
                             # Will need to research more... or did i call this wrong and just fix it?
-                            #self.remote_writer.send_iac(self.IAC + self.NOP)
-                            await self.remote_writer.drain()
+                            self.remote_writer.send_iac(self.IAC + self.NOP)
+                            await asyncio.wait(self.remote_writer.drain(), timeout=10)
                             continue
                         except Exception as e:
-                            log.debug(f"Heateat: Unknown error from {self.remote_info}, closing socket. Exeption {e}")
-                            self.remote_writer.close()
+                            log.debug(f"Heateat: Unknown error from {self.remote_info}, shutting down. Exeption {e}")
+                            await self.shutdown()
                             break
-                        finally:
-                            log.debug(f"Heatbeat: {self.remote_info} Yes I am.")
 
                     except Exception as e:
                         log.debug("Failed to read socket data exception: {e}")
@@ -250,15 +256,13 @@ class SFTelnetProxyMuxer:
                     client_info = client.get_extra_info('peername')
                 except:
                     client_info = "Unknown"
-                log.debug("Shuting down tcp session to {client_info}")
+                log.debug(f"Shuting down tcp session to {client_info}")
                 client.close()
-                await client.wait_closed()
             except Exception as e:
                 log.debug(f"Closing client connect {client_info} failed {e}")
         if self.remote_writer:
             try:
                 self.remote_writer.close()
-                #await self.remote_writer.wait_closed()
             except Exception as e:
                 log.debug(f"Failed to shutdown listen port: {self.remote_info}  {e}")
 
