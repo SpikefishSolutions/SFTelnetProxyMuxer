@@ -6,56 +6,56 @@ import pdb
 log = logging.getLogger(__name__)
 
 class SFTelnetProxyMuxer:
-    def __init__(self, remote_server=None, remote_port=None, listen_ip=None, listen_port=None, reader=None, writer=None, heartbeattimer=None):
+    def __init__(self, remote_server=None, remote_port=None, listen_ip=None, listen_port=None, remote_reader=None, remote_writer=None, heartbeattimer=None):
 
+        if not listen_port:
+            raise ValueError("Error: listen_port is required")
         self.server = None
         # remote_server/remote_port are remote telnet server to connect to.
-        # reader / writer are input and output channels to use instead of telneting to remote
-        if (remote_server or remote_port) and (reader or writer):
+        # remote_reader / remote_writer are input and output channels to use instead of telneting to remote
+        if (remote_server or remote_port) and (remote_reader or remote_writer):
             raise ValueError("Error: argument remote_server or remote_port can't be used along with reader or writer. Only use remote_server nad remote_port or reader / writer")
-        if remote_server and remote_port:
-            self.remote_server = remote_server
-            self.remote_port = remote_port
-            self.server = telnet
-        elif reader and writer:
-            self.reader = reader
-            self.writer = writer
-            self.server = 
-        else:
-            raise ValueError("You must define remote_server and remote_port or reader and writer. These input are where the proxy will get data from")
-      
+
+        # controls where we get data from
+        self.servertype = self.find_server_type(remote_server, remote_port, remote_reader, remote_writer)
+
         # make the remote_info look like the same format as client_info later from sock('peername')
         self.remote_info = f"('{self.remote_server}', {self.remote_port})"
         if listen_ip == None:
             listen_ip = '0.0.0.0'
         self.listen_ip = listen_ip
         self.listen_port = listen_port
-        # use reader for remote server info
-        if reader:
-            self.reader = reader
-        # use writer for remote server info
-        if writer:
-            self.writer = writer
+
         self.clients = set()
         self.remote_reader = None
         self.remote_writer = None
         self.lock = asyncio.Lock()  # Lock for coordinating access to the remote server
+
         # Telnet protocol constants
         self.IAC = b"\xff" # Interpret as Command
         # Telnet NOP command. Will be used as a heartbeat to clients.
         self.NOP = b"\xf1"
         # Telnet Are You There.
         self.AYT = b"\xf6"
-        if not remote_port:
-            raise ValueError("remote_port is a required value")
-        if not listen_port:
-            raise ValueError("listen_port is a required value")
+
         # how often do we check the remote telnet server is up and each telnet client connected to gns3 is up.
         self.heartbeattimer = heartbeattimer
         if not heartbeattimer:
             self.heartbeattimer = 30
         self.closing = False
 
+    def find_server_type(self, remote_server, remote_port, remote_reader, remote_writer):
+        if remote_server and remote_port:
+            self.remote_server = remote_server
+            self.remote_port = remote_port
+            self.server = "telnet"
+        elif remote_reader and remote_writer:
+            self.remote_reader = remote_reader
+            self.remote_writer = remote_writer
+            self.server = "readerwriter"
+        else:
+            raise ValueError("You must define remote_server and remote_port or reader and writer. These input are where the proxy will get data from")
+         
     async def handle_client(self, reader, writer):
         client_info = writer.get_extra_info('peername')
         sock = writer.get_extra_info('socket') 
@@ -69,29 +69,40 @@ class SFTelnetProxyMuxer:
                 try:
                     # Set a timeout for the read operation, without should() the socket closes after timeout.
                     data = await asyncio.shield(asyncio.wait_for(reader.read(1024), timeout=self.heartbeattimer))
-                    if not data:
-                        log.debug(f"No data from socket read, start over read loop.")
-                        continue 
                     if reader.at_eof():
+                        # should see if there was data and send it before we shutdown.
                         log.debug(f"Client {client_info} closed tcp session with eof.")
                         writer.close()
                         self.clients.discard(writer)
                         break
 
+                    if not data:
+                        log.debug(f"No data from socket read, start over read loop.")
+                        continue 
+
                     async with self.lock:
                         if self.remote_writer is not None:
                             log.debug(f"Sending data from from client {client_info} to server {self.remote_info}")
-                            self.remote_writer.write(data)
-                            await self.remote_writer.drain()
-                            continue
+                            try: 
+                                self.remote_writer.write(data)
+                                await asyncio.wait_for(self.remote_writer.drain(), timeout=10)
+                            except asyncio.TimeoutError:
+                                log.debug(f"Timeout failure waiting for write and/or drain. Closing server")
+                                self.shutdown()
+                                return
+                            except Exception as e:
+                                log.debug(f"Unknown failure waiting for write and/or drain. Closing server: Error {e}")
+                                self.shutdown()
+                                return
                            
+                # this just doesn't work right. We should indicate we sent a heartbeat then check on the next loop if there was a NOP packet.
+                # possible make a more inteligent queue for remotes that has a read timer. 
                 except asyncio.TimeoutError:
                     log.debug(f"No data read from {client_info}, send heartbeat to test client socket.")
                     try:
                         log.debug(f"Heatbeat: Are you there {client_info}?")
                         writer.send_iac(self.IAC + self.NOP)
-                        await writer.drain()
-                        continue
+                        await asyncio.wait_for(writer.drain(), timeout=10)
                     except asyncio.TimeoutError:
                         log.debug(f"Heatbeat: No reply from {client_info}, closing socket.")
                         writer.close()
@@ -104,8 +115,9 @@ class SFTelnetProxyMuxer:
                         break 
                     finally:
                         log.debug(f"Heatbeat: {client_info} Yes I am.")
+
                 except Exception as e:
-                    log.debyg(f"Error in handling data from client {client_info}:")
+                    log.debug(f"Error in handling data from client {client_info}:")
                     writer.close()
                     self.clients.discard(writer)
                     break
@@ -161,12 +173,12 @@ class SFTelnetProxyMuxer:
                     
                     try:
                         data = await asyncio.shield(asyncio.wait_for(self.remote_reader.read(1024), timeout=self.heartbeattimer))
-                        if not data:
-                            log.debug(f"No data from remote telnet server {self.remote_info}.")
-                            continue
                         if self.remote_reader.at_eof():
                             log.debug(f"Remote server {self.remote_info} closed tcp session with eof.")
                             break
+                        if not data:
+                            log.debug(f"No data from remote telnet server {self.remote_info}.")
+                            continue
                     except asyncio.TimeoutError:
                         log.debug(f"No data from server {self.remote_info}, send heartbeat to test socket.")
                         try:
