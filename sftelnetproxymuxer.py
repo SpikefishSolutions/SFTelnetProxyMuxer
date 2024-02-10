@@ -95,7 +95,7 @@ class SFTelnetProxyMuxer:
                                 self.shutdown()
                                 return
                            
-                # this just doesn't work right. We should indicate we sent a heartbeat then check on the next loop if there was a NOP packet.
+                # this just doesn't work right. We should indicate we sent a heartbeat then check on the next loop if there was a only a NOP packet.
                 # possible make a more inteligent queue for remotes that has a read timer. 
                 except asyncio.TimeoutError:
                     log.debug(f"No data read from {client_info}, send heartbeat to test client socket.")
