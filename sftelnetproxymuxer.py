@@ -80,10 +80,6 @@ class SFTelnetProxyMuxer:
                         log.debug(f"No data from socket read, start over read loop.")
                         continue 
 
-                    if data == self.NOP:
-                        log.debug(f"Heatbeat: {client_info} I am alive.")
-                        continue
-                        
                     async with self.lock:
                         log.debug(f"We have data from {self.remote_info} data: :{data}:")
                         if self.remote_writer is not None:
@@ -100,21 +96,23 @@ class SFTelnetProxyMuxer:
                                 await self.shutdown()
                                 return
                            
-                # this just doesn't work right. We should indicate we sent a heartbeat then check on the next loop if there was a only a NOP packet.
-                # possible make a more inteligent queue for remotes that has a read timer. 
+                # ok keepalives using NOP work but we just won't get data back as the receiver of the NOP will only ack the packet.
+                # This is fine as this will be enouogh for linux to start thinking about shuting down a socket that isn't
+                # responding. Hard to say long that will be but ubuntu with no magic is picking 300 seconds.
+                # if a flood of console traffic shows up the socket will close much sooner.
                 except asyncio.TimeoutError:
                     log.debug(f"No data read from {client_info}, send heartbeat to test client socket.")
                     try:
-                        log.debug(f"Heatbeat: Are you there {client_info}?")
+                        log.debug(f"Heartbeat: Are you there {client_info}?")
                         writer.send_iac(self.IAC + self.NOP)
                         await asyncio.wait_for(writer.drain(), timeout=10)
                     except asyncio.TimeoutError:
-                        log.debug(f"Heatbeat: No reply from {client_info}, closing socket.")
+                        log.debug(f"Heartbeat: Unable to send heartbeat to {client_info}, closing client socket.")
                         writer.close()
                         self.clients.discard(writer)
                         break 
                     except Exception as e:
-                        log.debug(f"Heateat: Unknown error from {client_info}, closing socket. Exeption {e}")
+                        log.debug(f"Heartbeat: Unknown error from {client_info}, closing client socket. Exeption {e}")
                         writer.close()
                         self.clients.discard(writer)
                         break 
@@ -173,43 +171,50 @@ class SFTelnetProxyMuxer:
                     raise ValueError("Server state incorrect. self.remote_reader or self.remote_writer close (eof).")
                 
                 while True and not self.closing:
-                    
                     try:
                         data = await asyncio.shield(asyncio.wait_for(self.remote_reader.read(1024), timeout=self.heartbeattimer))
                         if self.remote_reader.at_eof():
+                            # Not %100 sure its possible to get data and have the reader socket close, but just in case.
+                            if data:
+                                await self.broadcast_to_clients(data)
                             log.debug(f"Remote server {self.remote_info} closed tcp session with eof.")
                             break
+
                         if not data:
                             log.debug(f"No data from remote telnet server {self.remote_info}.")
                             continue
 
-                        if data == self.NOP:
-                            log.debug(f"Heatbeat: {self.remote_info} I am alive.")
-                            continue
-
                     except asyncio.TimeoutError:
-                        log.debug(f"No data from server {self.remote_info}, send heartbeat to test socket.")
+                        log.debug(f"No data from server {self.remote_info}, send heartbeat to test server socket.")
                         try:
-                            log.debug(f"Heatbeat: Are you there {self.remote_info}?")
+                            log.debug(f"Heartbeat: Are you there {self.remote_info}?")
                             # NOP and AYT cause QEMU to spam everyone's console with junk. 
                             # This causes everyone to close the session and eof tcp which makes me sad.
                             # Will need to research more... or did i call this wrong and just fix it?
                             self.remote_writer.send_iac(self.IAC + self.NOP)
                             await asyncio.wait_for(self.remote_writer.drain(), timeout=10)
                             continue
+ 
+                        except asyncio.TimeoutError:
+                            log.debug(f"Heartbeat: Unable to send heartbeat to {self.remote_info}, closing server socket.")
+                            await self.shutdown()
+                            break
+
                         except Exception as e:
-                            log.debug(f"Heateat: Unknown error from {self.remote_info}, shutting down. Exeption {e}")
+                            log.debug(f"Heartbeat: Unknown error from {self.remote_info}, shutting down. Exeption {e}")
                             await self.shutdown()
                             break
 
                     except Exception as e:
-                        log.debug("Failed to read socket data exception: {e}")
+                        log.debug("Failed to read socket data from server {self.remote_info} exception: {e}")
                         break
+                    # This can generate a lot of log noise.
                     #if not self.clients:
                     #    log.debug("No clients connected, but console data found. Skipping.")
                     #    continue
-                    #log.debug("Sending data to clients data: {data}")
+                    #log.debug(f"Sending data to clients data: {data}")
                     await self.broadcast_to_clients(data)
+
             except ConnectionRefusedError as e:
                 error_msg = f"Warning: Connection to remote server {self.remote_info} refused."
                 log.debug(error_msg)
